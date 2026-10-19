@@ -5,13 +5,11 @@
 #        "board not found" — проверьте актуальное имя (`zmk keyboard add`
 #        подставит его автоматически). Альтернативные написания:
 #        nice_nano//zmk, nice_nano_v2, nice_nano/nrf52840/zmk
-keyboard:
-  - name: sofle_diodless
+include:
+  - board: nice_nano//zmk
     shield: sofle_diodless_left
-    board: nice_nano//zmk
     artifact-name: sofle-diodless-left
 
-  - name: sofle_diodless
+  - board: nice_nano//zmk
     shield: sofle_diodless_right
-    board: nice_nano//zmk
     artifact-name: sofle-diodless-right
