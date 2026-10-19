@@ -1,0 +1,96 @@
+# Manual fallback build.
+#
+# Runs only on demand (Actions -> Run workflow), not on every push.
+# It does NOT need build.yaml: it discovers the nice!nano board target
+# itself via `west boards`, so it keeps working if ZMK renames the board
+# again (nice_nano_v2 -> nice_nano//zmk).
+#
+# Useful when .github/workflows/build.yml fails with "No board named ...":
+# this workflow prints the list of nice!nano targets it can see.
+
+name: Build ZMK firmware (manual, board auto-detect)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: zmkfirmware/zmk-build-arm:stable
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shield: sofle_diodless_left
+            artifact: sofle-diodless-left
+          - shield: sofle_diodless_right
+            artifact: sofle-diodless-right
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Init west workspace
+        run: |
+          set -euo pipefail
+          BASE=/tmp/zmk-workspace
+          mkdir -p "$BASE/config"
+          cp -R config/. "$BASE/config/"
+          cd "$BASE"
+          west init -l "$BASE/config"
+          west update --fetch-opt=--filter=tree:0
+          west zephyr-export
+
+      - name: Resolve nice!nano board target
+        id: board
+        working-directory: /tmp/zmk-workspace
+        run: |
+          set -euo pipefail
+          known="$(west boards --format '{name}' 2>/dev/null || true)"
+          echo "--- nice!nano targets found: ---"
+          echo "$known" | grep -i 'nice_nano' || true
+          BOARD=""
+          for candidate in 'nice_nano_v2' 'nice_nano//zmk' 'nice_nano/nrf52840/zmk'; do
+            if echo "$known" | grep -qxF "$candidate"; then BOARD="$candidate"; break; fi
+          done
+          if [ -z "$BOARD" ]; then
+            echo "::error::Could not resolve the nice!nano board target"
+            exit 1
+          fi
+          echo "Using board: $BOARD"
+          echo "board=$BOARD" >> "$GITHUB_OUTPUT"
+
+      - name: Build ${{ matrix.shield }}
+        working-directory: /tmp/zmk-workspace
+        run: |
+          set -euo pipefail
+          BUILD=/tmp/build-${{ matrix.shield }}
+          west build -s zmk/app -d "$BUILD" -b "${{ steps.board.outputs.board }}" -- \
+            -DZMK_CONFIG=/tmp/zmk-workspace/config \
+            -DZMK_EXTRA_MODULES="$GITHUB_WORKSPACE" \
+            -DSHIELD="${{ matrix.shield }}"
+          mkdir -p "$BUILD/artifacts"
+          if [ -f "$BUILD/zephyr/zmk.uf2" ]; then
+            cp "$BUILD/zephyr/zmk.uf2" "$BUILD/artifacts/${{ matrix.artifact }}.uf2"
+          elif [ -f "$BUILD/zephyr/zmk.hex" ]; then
+            cp "$BUILD/zephyr/zmk.hex" "$BUILD/artifacts/${{ matrix.artifact }}.hex"
+          fi
+
+      - name: Upload ${{ matrix.shield }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-${{ matrix.artifact }}
+          path: /tmp/build-${{ matrix.shield }}/artifacts
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Merge artifacts
+        uses: actions/upload-artifact/merge@v4
+        with:
+          name: firmware-manual
+          pattern: artifact-*
+          delete-merged: true

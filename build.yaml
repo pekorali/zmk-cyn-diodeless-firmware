@@ -1,15 +1,28 @@
-# Матрица сборки для GitHub Actions / ZMK CLI.
+---
+# Build matrix for .github/workflows/build-user-config.yml
 #
-# board: идентификатор платы nice!nano v2 из метаданных ZMK
-#        (см. https://zmk.dev/docs/hardware). Если сборка ругается на
-#        "board not found" — проверьте актуальное имя (`zmk keyboard add`
-#        подставит его автоматически). Альтернативные написания:
-#        nice_nano//zmk, nice_nano_v2, nice_nano/nrf52840/zmk
+# The workflow runs `yq -oj -I0 build.yaml` and injects the result
+# directly into `strategy.matrix`. Therefore the file MUST start with the
+# top-level `include:` key. Wrapping the list in any other key (e.g.
+# `keyboard:`) makes matrix.board / matrix.shield empty and the build
+# fails with "BOARD is not being defined".
+#
+# !! BOARD NAME DEPENDS ON THE ZMK REVISION IN config/west.yml !!
+#
+#   config/west.yml            Zephyr   nice!nano v2 target
+#   ------------------------------------------------------------
+#   revision: v0.3  (pinned)   3.5.0    nice_nano_v2
+#   revision: main             4.1.0    nice_nano//zmk
+#
+# Current config pins ZMK v0.3, so `nice_nano_v2` is the correct name.
+# If you switch west.yml to `main`, change the board here as well.
+#
+# Board name format: <board>[@revision]//<variant>  (Zephyr >= 4.1 / HWMv2)
 include:
-  - board: nice_nano//zmk
+  - board: nice_nano_v2
     shield: sofle_diodless_left
     artifact-name: sofle-diodless-left
 
-  - board: nice_nano//zmk
+  - board: nice_nano_v2
     shield: sofle_diodless_right
     artifact-name: sofle-diodless-right
