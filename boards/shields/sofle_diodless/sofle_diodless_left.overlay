@@ -1,0 +1,60 @@
+/*
+ * Copyright (c) 2026, sofle_diodless contributors
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
+ * sofle_diodless LEFT (CENTRAL half) — nice!nano v2
+ *
+ *  15 GPIO:
+ *    11 матрицы (5 ROW + 6 COL) + 4 прямых
+ *
+ *  ┌──────────┬────────┬────────┬────────┬────────┬────────┐
+ *  │ ROW0 P0.20│ COL0   │ COL1   │ COL2   │ COL3   │ COL4/5 │
+ *  └──────────┴────────┴────────┴────────┴────────┴────────┘
+ *
+ *  Полная раскладка (позиции композитного kscan):
+ *
+ *        col   0      1      2      3      4      5
+ *   row 0      `      1      2      3      4      5
+ *   row 1      ESC    Q      W      E      R      T
+ *   row 2 ★    TAB    A      S      D      F      G
+ *   row 3      SHIFT  Z      X      C      V      B
+ *   row 4 ★★   ---   ALT    CTRL   ---    ---    ---
+ *   row 5 🔴   GUI    LOWER  ENTER  ENC_BTN ---    ---
+ *
+ *   ★  home row (изолированный ROW-пин P0.24)
+ *   ★★ ROW4 занят только ALT и CTRL
+ *   🔴 прямой GPIO на GND — ghosting невозможен
+ */
+
+#include "sofle_diodless.dtsi"
+
+/*
+ *  COL-пины ЛЕВОЙ половины.
+ *  col 0 — внешний край, col 5 — край у центра.
+ */
+&kscan_matrix {
+    col-gpios
+        = <&gpio1  4 GPIO_ACTIVE_LOW>   /* COL0  P1.04 (B4)  ` ESC TAB SHIFT */
+        , <&gpio1  6 GPIO_ACTIVE_LOW>   /* COL1  P1.06 (B5)  1  Q   A    Z     */
+        , <&gpio0 31 GPIO_ACTIVE_LOW>   /* COL2  P0.31 (F4)  2  W   S    X     */
+        , <&gpio0 29 GPIO_ACTIVE_LOW>   /* COL3  P0.29 (F5)  3  E   D    C     */
+        , <&gpio0  2 GPIO_ACTIVE_LOW>   /* COL4  P0.02 (F6)  4  R   F    V     */
+        , <&gpio1 15 GPIO_ACTIVE_LOW>   /* COL5  P1.15 (F7)  5  T   G    B     */
+        ;
+};
+
+/*
+ *  Прямые клавиши занимают колонки 0..3 строки 5 (col-offset = 0
+ *  задан в sofle_diodless.dtsi):
+ *    P1.13 -> (5,0) GUI
+ *    P1.11 -> (5,1) LOWER
+ *    P0.10 -> (5,2) ENTER
+ *    P0.09 -> (5,3) ENC_BTN
+ */
+
+/* Энкодер левой половины: A = P1.08, B = P1.09 */
+&left_encoder {
+    status = "okay";
+};

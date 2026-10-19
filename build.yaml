@@ -1,0 +1,17 @@
+# Матрица сборки для GitHub Actions / ZMK CLI.
+#
+# board: идентификатор платы nice!nano v2 из метаданных ZMK
+#        (см. https://zmk.dev/docs/hardware). Если сборка ругается на
+#        "board not found" — проверьте актуальное имя (`zmk keyboard add`
+#        подставит его автоматически). Альтернативные написания:
+#        nice_nano//zmk, nice_nano_v2, nice_nano/nrf52840/zmk
+keyboard:
+  - name: sofle_diodless
+    shield: sofle_diodless_left
+    board: nice_nano//zmk
+    artifact-name: sofle-diodless-left
+
+  - name: sofle_diodless
+    shield: sofle_diodless_right
+    board: nice_nano//zmk
+    artifact-name: sofle-diodless-right

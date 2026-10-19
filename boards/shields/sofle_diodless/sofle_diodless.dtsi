@@ -1,0 +1,274 @@
+/*
+ * Copyright (c) 2026, sofle_diodless contributors
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
+ * sofle_diodless — ГИБРИДНАЯ МАТРИЦА (5x6 + 4 прямых GPIO) на nice!nano v2.
+ *
+ * Общий devicetree для обеих половин. Файл включается из
+ * sofle_diodless_left.overlay и sofle_diodless_right.overlay.
+ *
+ * ─────────────────────────────────────────────────────────────────────
+ *  ЧТО ТУТ ОПИСАНО
+ * ─────────────────────────────────────────────────────────────────────
+ *  1. chosen:           дисплей, kscan, физическая раскладка
+ *  2. default_transform матрица 6 x 12 = 72 логические позиции keymap
+ *  3. kscan_matrix      5 ROW x 6 COL (без диодов)
+ *  4. kscan_direct      4 кнопки, каждая напрямую на GND
+ *  5. kscan0            zmk,kscan-composite — объединяет 3 и 4
+ *  6. энкодеры EC11 (по одному на половину, отключены по умолчанию)
+ *  7. OLED SSD1306 на I2C1 (P0.16 / P0.17), по умолчанию выключен
+ *
+ * ─────────────────────────────────────────────────────────────────────
+ *  РАСПОЛОЖЕНИЕ ФИЗИЧЕСКИХ КЛЮЧЕЙ (позиции kscan)
+ * ─────────────────────────────────────────────────────────────────────
+ *  Композитный сканер отдаёт 6 "строк" x 6 "столбцов":
+ *
+ *      col:  0     1      2      3      4      5
+ *  row 0:   `     1      2      3      4      5      <- матрица, ROW0
+ *  row 1:  ESC    Q      W      E      R      T      <- матрица, ROW1
+ *  row 2:  TAB ★  A   ★  S   ★  D   ★  F   ★  G   ★  <- матрица, ROW2 (home row)
+ *  row 3:  SFT    Z      X      C      V      B      <- матрица, ROW3
+ *  row 4:   --   ALT ★★  CTRL ★★  --     --     --     <- матрица, ROW4 (2 клавиши)
+ *  row 5:  GUI 🔴 LOWER 🔴 ENTER 🔴 ENC 🔴  --     --    <- ПРЯМЫЕ GPIO
+ *
+ *  Матрица: 30 слотов, из них 26 распаяны (row4 используется только
+ *            на позициях col1 = ALT и col2 = CTRL).
+ *  Прямые:  4 слота (5,0..5,3) — физически изолированы от матрицы,
+ *            поэтому ghosting для GUI / LOWER / ENTER / ENC_BTN
+ *            МАТЕМАТИЧЕСКИ НЕВОЗМОЖЕН.
+ * ─────────────────────────────────────────────────────────────────────
+ */
+
+#include <dt-bindings/zmk/matrix_transform.h>
+#include <physical_layouts.dtsi>
+
+/ {
+    chosen {
+        zephyr,display = &oled;
+        zmk,kscan = &kscan0;
+        zmk,physical-layout = &sofle_diodless_layout;
+    };
+
+    /* ── Физическая раскладка (для ZMK Studio и маппинга позиций) ── */
+    sofle_diodless_layout: sofle_diodless_layout {
+        compatible = "zmk,physical-layout";
+        display-name = "Sofle Diodless (hybrid)";
+        transform = <&default_transform>;
+
+        /* w    h    x     y    rot  rx  ry  — по одному на keymap-позицию */
+        keys
+            = <&key_physical_attrs 100 100    0   0 0 0 0>, <&key_physical_attrs 100 100  100   0 0 0 0>, <&key_physical_attrs 100 100  200   0 0 0 0>, <&key_physical_attrs 100 100  300   0 0 0 0>, <&key_physical_attrs 100 100  400   0 0 0 0>, <&key_physical_attrs 100 100  500   0 0 0 0>
+            , <&key_physical_attrs 100 100  700   0 0 0 0>, <&key_physical_attrs 100 100  800   0 0 0 0>, <&key_physical_attrs 100 100  900   0 0 0 0>, <&key_physical_attrs 100 100 1000   0 0 0 0>, <&key_physical_attrs 100 100 1100   0 0 0 0>, <&key_physical_attrs 100 100 1200   0 0 0 0>
+            , <&key_physical_attrs 100 100    0 100 0 0 0>, <&key_physical_attrs 100 100  100 100 0 0 0>, <&key_physical_attrs 100 100  200 100 0 0 0>, <&key_physical_attrs 100 100  300 100 0 0 0>, <&key_physical_attrs 100 100  400 100 0 0 0>, <&key_physical_attrs 100 100  500 100 0 0 0>
+            , <&key_physical_attrs 100 100  700 100 0 0 0>, <&key_physical_attrs 100 100  800 100 0 0 0>, <&key_physical_attrs 100 100  900 100 0 0 0>, <&key_physical_attrs 100 100 1000 100 0 0 0>, <&key_physical_attrs 100 100 1100 100 0 0 0>, <&key_physical_attrs 100 100 1200 100 0 0 0>
+            , <&key_physical_attrs 100 100    0 200 0 0 0>, <&key_physical_attrs 100 100  100 200 0 0 0>, <&key_physical_attrs 100 100  200 200 0 0 0>, <&key_physical_attrs 100 100  300 200 0 0 0>, <&key_physical_attrs 100 100  400 200 0 0 0>, <&key_physical_attrs 100 100  500 200 0 0 0>
+            , <&key_physical_attrs 100 100  700 200 0 0 0>, <&key_physical_attrs 100 100  800 200 0 0 0>, <&key_physical_attrs 100 100  900 200 0 0 0>, <&key_physical_attrs 100 100 1000 200 0 0 0>, <&key_physical_attrs 100 100 1100 200 0 0 0>, <&key_physical_attrs 100 100 1200 200 0 0 0>
+            , <&key_physical_attrs 100 100    0 300 0 0 0>, <&key_physical_attrs 100 100  100 300 0 0 0>, <&key_physical_attrs 100 100  200 300 0 0 0>, <&key_physical_attrs 100 100  300 300 0 0 0>, <&key_physical_attrs 100 100  400 300 0 0 0>, <&key_physical_attrs 100 100  500 300 0 0 0>
+            , <&key_physical_attrs 100 100  700 300 0 0 0>, <&key_physical_attrs 100 100  800 300 0 0 0>, <&key_physical_attrs 100 100  900 300 0 0 0>, <&key_physical_attrs 100 100 1000 300 0 0 0>, <&key_physical_attrs 100 100 1100 300 0 0 0>, <&key_physical_attrs 100 100 1200 300 0 0 0>
+            , <&key_physical_attrs 100 100    0 425 0 0 0>, <&key_physical_attrs 100 100  100 425 0 0 0>, <&key_physical_attrs 100 100  200 425 0 0 0>, <&key_physical_attrs 100 100  300 425 0 0 0>, <&key_physical_attrs 100 100  400 425 0 0 0>, <&key_physical_attrs 100 100  500 425 0 0 0>
+            , <&key_physical_attrs 100 100  700 425 0 0 0>, <&key_physical_attrs 100 100  800 425 0 0 0>, <&key_physical_attrs 100 100  900 425 0 0 0>, <&key_physical_attrs 100 100 1000 425 0 0 0>, <&key_physical_attrs 100 100 1100 425 0 0 0>, <&key_physical_attrs 100 100 1200 425 0 0 0>
+            , <&key_physical_attrs 100 100    0 545 0 0 0>, <&key_physical_attrs 100 100  100 545 0 0 0>, <&key_physical_attrs 100 100  200 545 0 0 0>, <&key_physical_attrs 100 100  300 545 0 0 0>, <&key_physical_attrs 100 100  400 545 0 0 0>, <&key_physical_attrs 100 100  500 545 0 0 0>
+            , <&key_physical_attrs 100 100  700 545 0 0 0>, <&key_physical_attrs 100 100  800 545 0 0 0>, <&key_physical_attrs 100 100  900 545 0 0 0>, <&key_physical_attrs 100 100 1000 545 0 0 0>, <&key_physical_attrs 100 100 1100 545 0 0 0>, <&key_physical_attrs 100 100 1200 545 0 0 0>
+            ;
+    };
+
+    /* ── MATRIX TRANSFORM: 6 логических строк x 12 логических столбцов ──
+     *
+     * Индекс = keymap-позиция (слева направо, сверху вниз).
+     * Значение = RC(row, col) физической позиции композитного kscan.
+     *
+     * Левая половина работает без смещения (col-offset = 0),
+     * правая — с col-offset = 6 (см. sofle_diodless_right.overlay).
+     */
+    default_transform: sofle_diodless_transform {
+        compatible = "zmk,matrix-transform";
+        columns = <12>;
+        rows = <6>;
+        /*
+         *  pos  0- 5  LEFT  row0  ` 1 2 3 4 5     | pos  6-11  RIGHT row0  6 7 8 9 0 —
+         *  pos 12-23  LEFT  row1  ESC Q W E R T   | pos 18-23+ RIGHT row1  Y U I O P BSPC
+         *  pos 24-35  LEFT  row2  TAB A S D F G ★ | RIGHT row2  H J K L ; '
+         *  pos 36-47  LEFT  row3  SFT Z X C V B     | RIGHT row3  N M , . / SHIFT
+         *  pos 48-59  LEFT  row4  — ALT CTRL — — — | RIGHT row4  — — — CTRL ALT —
+         *  pos 60-71  LEFT  row5  GUI LOWER RET ENC| RIGHT row5  — — SPC RAISE GUI ENC
+         */
+        map = <
+RC(0,0) RC(0,1) RC(0,2) RC(0,3) RC(0,4) RC(0,5) RC(0,6) RC(0,7) RC(0,8) RC(0,9) RC(0,10) RC(0,11)
+RC(1,0) RC(1,1) RC(1,2) RC(1,3) RC(1,4) RC(1,5) RC(1,6) RC(1,7) RC(1,8) RC(1,9) RC(1,10) RC(1,11)
+RC(2,0) RC(2,1) RC(2,2) RC(2,3) RC(2,4) RC(2,5) RC(2,6) RC(2,7) RC(2,8) RC(2,9) RC(2,10) RC(2,11)
+RC(3,0) RC(3,1) RC(3,2) RC(3,3) RC(3,4) RC(3,5) RC(3,6) RC(3,7) RC(3,8) RC(3,9) RC(3,10) RC(3,11)
+RC(4,0) RC(4,1) RC(4,2) RC(4,3) RC(4,4) RC(4,5) RC(4,6) RC(4,7) RC(4,8) RC(4,9) RC(4,10) RC(4,11)
+RC(5,0) RC(5,1) RC(5,2) RC(5,3) RC(5,4) RC(5,5) RC(5,6) RC(5,7) RC(5,8) RC(5,9) RC(5,10) RC(5,11)
+        >;
+    };
+
+    /* ═══════════════════════════════════════════════════════════════
+     *  KSCAN 1/3 — МАТРИЦА 5 ROW x 6 COL (11 GPIO, без диодов)
+     *
+     *  diode-direction = "col2row":
+     *      col-gpios -> выход, в активном состоянии LOW
+     *      row-gpios -> вход с внутренней подтяжкой PULL_UP
+     *  Нажатие кнопки соединяет ROW-пин с COL-пином => ROW становится LOW.
+     *
+     *  ROW-пины одинаковы на обеих половинах, поэтому вынесены сюда.
+     *  col-gpios задаются в соответствующем .overlay.
+     * ═══════════════════════════════════════════════════════════════ */
+    kscan_matrix: sofle_diodless_matrix {
+        compatible = "zmk,kscan-gpio-matrix";
+        diode-direction = "col2row";
+
+        row-gpios
+            = <&gpio0 20 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* ROW0  P0.20  (D0) ` 1 2 3 4 5  */
+            , <&gpio0 22 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* ROW1  P0.22  (D4) ESC Q W E R T */
+            , <&gpio0 24 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* ROW2  P0.24  (C6) TAB A S D F G ★ */
+            , <&gpio1  0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* ROW3  P1.00  (D7) SFT Z X C V B  */
+            , <&gpio0 11 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* ROW4  P0.11  (E6) только ALT + CTRL */
+            ;
+    };
+
+    /* ═══════════════════════════════════════════════════════════════
+     *  KSCAN 2/3 — 4 ПРЯМЫХ GPIO -> 4 КЛАВИШИ
+     *
+     *  Каждая кнопка:  Px.y ──── [ switch ] ──── GND
+     *  Внутренний PULL_UP держит пин в HIGH, нажатие даёт LOW.
+     *  Эти пины НЕ связаны с матрицей => ghosting невозможен физически.
+     *
+     *  Список одинаков для обеих половин. Порядок в списке =
+     *  индекс "столбца" прямого сканера (0..3), реальная позиция
+     *  получается через row-offset/col-offset в sofle_diodless_direct_child.
+     * ═══════════════════════════════════════════════════════════════ */
+    kscan_direct: sofle_diodless_direct {
+        compatible = "zmk,kscan-gpio-direct";
+
+        input-gpios
+            = <&gpio1 13 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* [0] ЛЕВАЯ: GUI        ПРАВАЯ: SPACE  */
+            , <&gpio1 11 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* [1] ЛЕВАЯ: LOWER      ПРАВАЯ: RAISE  */
+            , <&gpio0 10 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* [2] ЛЕВАЯ: ENTER      ПРАВАЯ: RGUI   */
+            , <&gpio0  9 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* [3] ЛЕВАЯ: ENC_BTN    ПРАВАЯ: ENC_BTN */
+            ;
+    };
+
+    /* ═══════════════════════════════════════════════════════════════
+     *  KSCAN 3/3 — zmk,kscan-composite
+     *
+     *  Объединяет матрицу и прямые кнопки в один сканер 6x6:
+     *      матрица  -> (0..4, 0..5)   без смещения
+     *      direct   -> (5, 0..3)      row-offset = 5
+     *
+     *  Для правой половины в overlay выставляется col-offset = 2 у
+     *  sofle_diodless_direct_child, чтобы direct-позиции оказались
+     *  зеркальными относительно левой половины: (5,2)..(5,5).
+     * ═══════════════════════════════════════════════════════════════ */
+    kscan0: sofle_diodless_kscan {
+        compatible = "zmk,kscan-composite";
+        rows = <6>;
+        columns = <6>;
+        wakeup-source;
+
+        matrix {
+            kscan = <&kscan_matrix>;
+            row-offset = <0>;
+            col-offset = <0>;
+        };
+
+        sofle_diodless_direct_child: direct {
+            kscan = <&kscan_direct>;
+            row-offset = <5>;
+            col-offset = <0>;
+        };
+    };
+
+    /* ═══════════════════════════════════════════════════════════════
+     *  ЭНКОДЕРЫ (EC11). Выключены по умолчанию — включаются в .overlay
+     *  и в sofle_diodless.conf (CONFIG_EC11=y).
+     *  Выводы A/B: P1.08 / P1.09 (одинаковы на обеих половинах).
+     *  Кнопка энкодера = ENC_BTN (прямой GPIO, P0.09).
+     * ═══════════════════════════════════════════════════════════════ */
+    left_encoder: sofle_diodless_encoder_left {
+        compatible = "alps,ec11";
+        a-gpios = <&gpio1 8 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>;
+        b-gpios = <&gpio1 9 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>;
+        steps = <80>;
+        status = "disabled";
+    };
+
+    right_encoder: sofle_diodless_encoder_right {
+        compatible = "alps,ec11";
+        a-gpios = <&gpio1 8 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>;
+        b-gpios = <&gpio1 9 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>;
+        steps = <80>;
+        status = "disabled";
+    };
+
+    sensors: sensors {
+        compatible = "zmk,keymap-sensors";
+        sensors = <&left_encoder &right_encoder>;
+        triggers-per-rotation = <20>;
+    };
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  КОНФЛИКТЫ ПИНОВ nice!nano, КОТОРЫЕ НУЖНО ОТКЛЮЧИТЬ:
+ *
+ *  i2c0 (pro_micro_i2c) использует P0.17 (SDA) и P0.20 (SCL),
+ *  а P0.20 у нас — ROW0. Поэтому I2C0 выключаем, OLED перевешен
+ *  на I2C1: SDA = P0.16, SCL = P0.17.
+ *
+ *  spi1 (pro_micro_spi) использует P1.13 / P0.10 / P1.11 —
+ *  это ровно наши три прямые клавиши. Выключаем.
+ * ═══════════════════════════════════════════════════════════════════ */
+&pro_micro_i2c {
+    status = "disabled";
+};
+
+&pro_micro_spi {
+    status = "disabled";
+};
+
+/* OLED SSD1306 — включается в sofle_diodless.conf (CONFIG_ZMK_DISPLAY=y) */
+&i2c1 {
+    compatible = "nordic,nrf-twim";
+    status = "okay";
+
+    pinctrl-0 = <&sofle_diodless_i2c1_default>;
+    pinctrl-1 = <&sofle_diodless_i2c1_sleep>;
+    pinctrl-names = "default", "sleep";
+
+    /* SSD1306 не переносит повторный START между фрагментами */
+    zephyr,concat-buf-size = <16>;
+
+    oled: ssd1306@3c {
+        compatible = "solomon,ssd1306fb";
+        reg = <0x3c>;
+        width = <128>;
+        height = <32>;
+        segment-offset = <0>;
+        page-offset = <0>;
+        display-offset = <0>;
+        multiplex-ratio = <31>;
+        segment-remap;
+        com-invdir;
+        com-sequential;
+        inversion-on;
+        prechargep = <0x22>;
+    };
+};
+
+&pinctrl {
+    sofle_diodless_i2c1_default: sofle_diodless_i2c1_default {
+        group1 {
+            psels = <NRF_PSEL(TWIM_SDA, 0, 16)>,   /* P0.16 */
+                    <NRF_PSEL(TWIM_SCL, 0, 17)>;   /* P0.17 */
+        };
+    };
+
+    sofle_diodless_i2c1_sleep: sofle_diodless_i2c1_sleep {
+        group1 {
+            psels = <NRF_PSEL(TWIM_SDA, 0, 16)>,
+                    <NRF_PSEL(TWIM_SCL, 0, 17)>;
+            low-power-enable;
+        };
+    };
+};

@@ -1,0 +1,7 @@
+# ZMK module description.
+#
+# `board_root: .` tells Zephyr that this module adds a `boards/` directory,
+# so ZMK finds our shield in `boards/shields/sofle_diodless/`.
+build:
+  settings:
+    board_root: .

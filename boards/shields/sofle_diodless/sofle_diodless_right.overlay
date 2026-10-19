@@ -1,0 +1,68 @@
+/*
+ * Copyright (c) 2026, sofle_diodless contributors
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
+ * sofle_diodless RIGHT (PERIPHERAL half) — nice!nano v2
+ *
+ *  Полностью зеркальное отражение левой половины: те же 15 GPIO,
+ *  но порядок COL-пинов развёрнут (col 0 — край у центра).
+ *
+ *        col   0      1      2      3      4      5
+ *   row 0      6      7      8      9      0      ---
+ *   row 1      Y      U      I      O      P      BSPC
+ *   row 2 ★    H      J      K      L      ;      '
+ *   row 3      N      M      ,      .      /      SHIFT
+ *   row 4 ★★   ---    ---    ---    CTRL   ALT    ---
+ *   row 5 🔴   ---    ---    SPACE  RAISE  RGUI   ENC_BTN
+ *
+ *  RC(4,3) и RC(4,4) — это те же два ключа, что ALT/CTRL слева,
+ *  только зеркально (левый col1 -> правый col4, левый col2 -> правый col3).
+ *
+ *  ВАЖНО: распиновка правой половины (какие GPIO навеяны на PCB)
+ *  выведена из зеркала левой. Если на вашей правой PCB выводы
+ *  разведены иначе — правьте col-gpios и input-gpios в этом файле
+ *  и в sofle_diodless.dtsi.
+ */
+
+#include "sofle_diodless.dtsi"
+
+/*
+ *  Правая половина начинается с 7-го логического столбца keymap,
+ *  поэтому сдвигаем transform на 6.
+ */
+&default_transform {
+    col-offset = <6>;
+};
+
+/*
+ *  Зеркалим блок прямых клавиш: вместо колонок 0..3 они попадают
+ *  в колонки 2..5 (крайние 4 позиции, зеркальные левой половине).
+ *    P1.13 -> (5,2) SPACE
+ *    P1.11 -> (5,3) RAISE
+ *    P0.10 -> (5,4) RGUI
+ *    P0.09 -> (5,5) ENC_BTN
+ */
+&sofle_diodless_direct_child {
+    col-offset = <2>;
+};
+
+/*
+ *  COL-пины ПРАВОЙ половины — порядок развёрнут относительно левой.
+ */
+&kscan_matrix {
+    col-gpios
+        = <&gpio1 15 GPIO_ACTIVE_LOW>   /* COL0  P1.15 (F7)  6     Y    H    N   */
+        , <&gpio0  2 GPIO_ACTIVE_LOW>   /* COL1  P0.02 (F6)  7     U    J    M   */
+        , <&gpio0 29 GPIO_ACTIVE_LOW>   /* COL2  P0.29 (F5)  8     I    K    ,   */
+        , <&gpio0 31 GPIO_ACTIVE_LOW>   /* COL3  P0.31 (F4)  9     O    L    .   */
+        , <&gpio1  6 GPIO_ACTIVE_LOW>   /* COL4  P1.06 (B5)  0     P    ;    /   */
+        , <&gpio1  4 GPIO_ACTIVE_LOW>   /* COL5  P1.04 (B4)  BSPC  '    SHIFT     */
+        ;
+};
+
+/* Энкодер правой половины: A = P1.08, B = P1.09 */
+&right_encoder {
+    status = "okay";
+};

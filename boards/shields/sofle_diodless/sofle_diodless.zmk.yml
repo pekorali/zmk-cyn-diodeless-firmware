@@ -1,0 +1,14 @@
+file_format: "1"
+id: sofle_diodless
+name: Sofle Diodless (Hybrid Matrix)
+type: shield
+url: https://github.com/
+requires: [pro_micro]
+exposes: [i2c_oled]
+features:
+  - keys
+  - display
+  - encoder
+siblings:
+  - sofle_diodless_left
+  - sofle_diodless_right
