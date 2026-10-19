@@ -1,24 +1,13 @@
-# West manifest for this ZMK user config.
-#
-#   west init -l ./config
-#   west update
-#   west zephyr-export
-#   west build -s zmk/app -d build -- -DSHIELD=sofle_diodless_left \
-#       -DZMK_CONFIG=<this-repo>/config -DZMK_EXTRA_MODULES=<this-repo>
-#
 manifest:
-  defaults:
-    # Pinned ZMK release (zmk,kscan-composite is available since v0.2).
-    revision: v0.3
-
   remotes:
     - name: zmkfirmware
       url-base: https://github.com/zmkfirmware
-
+    # Additional modules containing boards/shields/custom code can be listed here as well
+    # See https://docs.zephyrproject.org/3.2.0/develop/west/manifest.html#projects
   projects:
     - name: zmk
       remote: zmkfirmware
+      revision: main
       import: app/west.yml
-
   self:
     path: config
