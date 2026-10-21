@@ -1,0 +1,53 @@
+#
+# Copyright (c) 2026, sofle_diodless contributors
+# SPDX-License-Identifier: MIT
+#
+
+description: |
+  GPIO keyboard matrix controller for DIODELESS matrices.
+
+  Unlike the standard zmk,kscan-gpio-matrix driver, this driver puts the
+  outputs that are not currently being scanned into a high-impedance state
+  instead of driving them to the inactive level.
+
+  In a matrix without diodes, two keys that share a node (a row or a column)
+  short two outputs of the MCU against each other. The standard driver drives
+  the idle outputs to a defined level, so the short happens and both keys read
+  as released. With the idle outputs in high-Z, no short is possible and the
+  matrix behaves like a proper NKRO matrix: any combination of keys can be
+  pressed at the same time.
+
+compatible: "zmk,kscan-gpio-matrix-hiz"
+
+properties:
+  row-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      The row GPIOs. Always the OUTPUTS: exactly one of them is driven to its
+      active level at a time, the rest are left in high-Z (floating input).
+      They are driven to their active level (LOW with GPIO_ACTIVE_LOW) in the
+      idle state so a key press can raise the level interrupt.
+  col-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      The column GPIOs. Always the INPUTS; each one needs a pull-up
+      (GPIO_PULL_UP) in the devicetree. A pressed key pulls its column to the
+      level driven by the row that is currently being scanned.
+  debounce-press-ms:
+    type: int
+    default: 5
+    description: Debounce time for key press in milliseconds. Use 0 for eager debouncing.
+  debounce-release-ms:
+    type: int
+    default: 5
+    description: Debounce time for key release in milliseconds.
+  debounce-scan-period-ms:
+    type: int
+    default: 1
+    description: Time between reads in milliseconds when any key is pressed.
+  poll-period-ms:
+    type: int
+    default: 10
+    description: Time between reads in milliseconds when no key is pressed.

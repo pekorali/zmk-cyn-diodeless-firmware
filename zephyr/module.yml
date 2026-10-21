@@ -1,7 +1,16 @@
-# ZMK module description.
+# Zephyr module description for the sofle_diodless keyboard.
 #
 # `board_root: .` tells Zephyr that this module adds a `boards/` directory,
 # so ZMK finds our shield in `boards/shields/sofle_diodless/`.
+#
+# `dts_root: .` tells Zephyr that this module adds a `dts/` directory,
+# so our own devicetree binding in `dts/bindings/` is found.
+#
+# `cmake` defaults to `zephyr` and `kconfig` defaults to `zephyr/Kconfig`,
+# so zephyr/CMakeLists.txt and zephyr/Kconfig are picked up automatically.
+name: zmk-keyboard-sofle-diodless
+
 build:
   settings:
     board_root: .
+    dts_root: .
