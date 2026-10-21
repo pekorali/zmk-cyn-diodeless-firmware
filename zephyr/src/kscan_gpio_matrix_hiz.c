@@ -56,6 +56,33 @@
  *  row-gpios = ВЫХОДЫ (стробы), col-gpios = ВХОДЫ (с PULL_UP).
  *  Нумерация (row, col), которую видит matrix-transform, совпадает с
  *  нумерацией штатного драйвера: (индекс в row-gpios, индекс в col-gpios).
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ *  ФИЛЬТР ПРИЗРАКОВ (ghosting)
+ * ─────────────────────────────────────────────────────────────────────────
+ *  Даже с high-Z у матрицы без диодов остаётся один эффект: ПРИЗРАК.
+ *
+ *  Нажатая клавиша — это просто провод между строкой и столбцом. Три
+ *  клавиши, образующие "уголок" (Г-образная цепочка), замыкают путь:
+ *
+ *      R1 ---[W]--- C2 ---[S]--- R2 ---[D]--- C3
+ *
+ *  Пока сканируется строка 1 (R1 = LOW), этот путь тянет и C3 в LOW —
+ *  драйвер видит нажатую клавишу (1,3) = "E", хотя её никто не жал.
+ *
+ *  Убрать призрака ЦИФРОВЫМ сканом невозможно: наборы {W,S,D} и
+ *  {W,S,D,E} дают одинаковые напряжения на всех выводах, то есть
+ *  электрически неразличимы. Поэтому фильтр не «знает» истину, а
+ *  выбирает наиболее правдоподобную трактовку:
+ *
+ *    • ячейка, которая появилась только потому, что достала цепочка
+ *      (в цепочке есть клавиша, нажатая только что), с высокой
+ *      вероятностью призрак;
+ *    • уже подтверждённые (реальные) клавиши фильтр никогда не убирает.
+ *
+ *  Что остаётся неразрешимым: если пользователь нажал 3 клавиши
+ *  «уголком» одновременно (за один скан), фильтр выбирает одну из двух
+ *  равноправных трактовок. Единственное настоящее решение — диоды.
  */
 
 #define DT_DRV_COMPAT zmk_kscan_gpio_matrix_hiz
@@ -79,6 +106,9 @@
 
 /* CONFIG_ZMK_LOG_LEVEL always exists (ZMK's own drivers use it too). */
 LOG_MODULE_REGISTER(kscan_gpio_matrix_hiz, CONFIG_ZMK_LOG_LEVEL);
+
+/* Maximum number of matrix cells the ghost filter can handle (bitmask). */
+#define HIZ_MAX_CELLS 32
 
 /* -------------------------------------------------------------------------
  * GPIO helpers
@@ -175,6 +205,14 @@ struct kscan_hiz_data {
     kscan_callback_t callback;
     struct k_work_delayable work;
     int64_t scan_time;
+#if IS_ENABLED(CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_GHOST_FILTER)
+    /* Фильтр призраков (см. описание в начале файла). */
+    uint32_t confirmed;  /* битовая маска реально нажатых ячеек */
+    uint32_t suppressed; /* ячейки, признанные призраками */
+    uint32_t observed;   /* предыдущее "сырое" наблюдение матрицы */
+    uint32_t press_seq[HIZ_MAX_CELLS]; /* порядок нажатия (для реальных) */
+    uint32_t press_counter;
+#endif
 };
 
 /* -------------------------------------------------------------------------
@@ -185,6 +223,215 @@ static int kscan_hiz_interrupt_enable(const struct device *dev);
 static int kscan_hiz_interrupt_disable(const struct device *dev);
 static void kscan_hiz_irq_callback_handler(const struct device *port, struct gpio_callback *cb,
                                            gpio_port_pins_t pin);
+
+/* -------------------------------------------------------------------------
+ * Фильтр призраков
+ * ------------------------------------------------------------------------- */
+
+#if IS_ENABLED(CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_GHOST_FILTER)
+
+/* Индекс ячейки в битовой маске: как и у matrix_state — (col * rows + row). */
+static inline uint32_t hiz_cell_index(uint32_t row, uint32_t col, uint32_t rows) {
+    return (col * rows) + row;
+}
+
+static uint8_t hiz_uf_find(uint8_t *parent, uint8_t node) {
+    while (parent[node] != node) {
+        parent[node] = parent[parent[node]];
+        node = parent[node];
+    }
+
+    return node;
+}
+
+static void hiz_uf_union(uint8_t *parent, uint8_t a, uint8_t b) {
+    a = hiz_uf_find(parent, a);
+    b = hiz_uf_find(parent, b);
+
+    if (a != b) {
+        parent[a] = b;
+    }
+}
+
+/**
+ * Какие ячейки читаются как нажатые, если реально нажаты ячейки из `mask`.
+ *
+ * Клавиша — это провод между строкой R_r и столбцом C_c. Пока строка r
+ * сканируется (R_r = LOW), столбец c читается LOW тогда и только тогда,
+ * когда R_r и C_c связаны цепочкой нажатых клавиш, т.е. находятся в одной
+ * связной компоненте графа.
+ *
+ * Возвращает битовую маску тех же ячеек, что и `mask`.
+ */
+static uint32_t hiz_matrix_closure(uint32_t mask, uint32_t rows, uint32_t cols) {
+    uint8_t parent[HIZ_MAX_CELLS];
+    uint32_t out = 0;
+
+    for (uint32_t i = 0; i < (rows + cols); i++) {
+        parent[i] = (uint8_t)i;
+    }
+
+    for (uint32_t r = 0; r < rows; r++) {
+        for (uint32_t c = 0; c < cols; c++) {
+            if ((mask & BIT(hiz_cell_index(r, c, rows))) == 0) {
+                continue;
+            }
+
+            hiz_uf_union(parent, (uint8_t)r, (uint8_t)(rows + c));
+        }
+    }
+
+    for (uint32_t r = 0; r < rows; r++) {
+        for (uint32_t c = 0; c < cols; c++) {
+            if (hiz_uf_find(parent, (uint8_t)r) == hiz_uf_find(parent, (uint8_t)(rows + c))) {
+                out |= BIT(hiz_cell_index(r, c, rows));
+            }
+        }
+    }
+
+    return out;
+}
+
+/**
+ * Можно ли объяснить ячейку `cell` как призрак цепочкой из трёх клавиш:
+ *
+ *      K1 = (r, c1) --- K2 = (r2, c1) --- K3 = (r2, c)
+ *
+ * где r — строка призрака, c — его столбец, r2 != r, c1 != c.
+ *
+ * Условия:
+ *   • все три клавиши есть в `real_mask` (это реальные клавиши);
+ *   • в цепочке есть клавиша, которая появилась только что (`fresh_mask`) —
+ *     иначе цепочка была бы замкнута давно и призрак появился бы раньше;
+ *   • уже подтверждённые клавиши в цепочке нажаты в том же порядке.
+ */
+static bool hiz_ghost_explainable(uint32_t cell, uint32_t real_mask, uint32_t confirmed,
+                                  const uint32_t *press_seq, uint32_t fresh_mask, uint32_t rows,
+                                  uint32_t cols) {
+    const uint32_t r = cell % rows;
+    const uint32_t c = cell / rows;
+
+    for (uint32_t c1 = 0; c1 < cols; c1++) {
+        if (c1 == c) {
+            continue;
+        }
+
+        const uint32_t k1 = hiz_cell_index(r, c1, rows);
+        if ((real_mask & BIT(k1)) == 0) {
+            continue;
+        }
+
+        for (uint32_t r2 = 0; r2 < rows; r2++) {
+            if (r2 == r) {
+                continue;
+            }
+
+            const uint32_t k2 = hiz_cell_index(r2, c1, rows);
+            const uint32_t k3 = hiz_cell_index(r2, c, rows);
+
+            if ((real_mask & BIT(k2)) == 0 || (real_mask & BIT(k3)) == 0) {
+                continue;
+            }
+
+            const uint32_t chain = BIT(k1) | BIT(k2) | BIT(k3);
+
+            /* Цепочка должна замкнуться именно сейчас. */
+            if ((chain & fresh_mask) == 0) {
+                continue;
+            }
+
+            /* Подтверждённые клавиши цепочки должны быть нажаты по порядку. */
+            const uint32_t keys[3] = {k1, k2, k3};
+            bool have_confirmed = false;
+            int last = -1;
+            bool ordered = true;
+
+            for (int i = 0; i < 3; i++) {
+                if ((confirmed & BIT(keys[i])) == 0) {
+                    continue;
+                }
+
+                have_confirmed = true;
+                if ((int32_t)press_seq[keys[i]] < last) {
+                    ordered = false;
+                    break;
+                }
+                last = (int32_t)press_seq[keys[i]];
+            }
+
+            if (have_confirmed && ordered) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Отбрасывает призраки из "сырого" наблюдения `raw`.
+ *
+ * Возвращает битовую маску ячеек, которые драйвер считает реально
+ * нажатыми.
+ */
+static uint32_t hiz_filter_ghosts(const struct device *dev, uint32_t raw) {
+    struct kscan_hiz_data *data = dev->data;
+    const struct kscan_hiz_config *cfg = dev->config;
+    const uint32_t rows = (uint32_t)cfg->rows;
+    const uint32_t cols = (uint32_t)cfg->cols;
+    const uint32_t cells = rows * cols;
+
+    /* Клавиши, которые отпустили, больше не нажаты. */
+    data->confirmed &= raw;
+    data->suppressed &= raw;
+
+    /* Клавиши, которые появились только что. */
+    const uint32_t fresh = raw & ~data->observed;
+
+    uint32_t real = raw & ~data->suppressed;
+
+    for (uint32_t i = 0; i < cells; i++) {
+        const uint32_t bit = BIT(i);
+
+        if ((real & bit) == 0 || (data->confirmed & bit) != 0) {
+            continue;
+        }
+
+        if ((fresh & bit) == 0) {
+            continue; /* не новая ячейка */
+        }
+
+        /* Если ячейка нужна, чтобы объяснить наблюдение — она настоящая. */
+        if (hiz_matrix_closure(real & ~bit, rows, cols) != raw) {
+            continue;
+        }
+
+        if (!hiz_ghost_explainable(i, real & ~bit, data->confirmed, data->press_seq, fresh, rows,
+                                   cols)) {
+            continue;
+        }
+
+        LOG_DBG("Ghost at row %u col %u suppressed", i % rows, i / rows);
+
+        real &= ~bit;
+        data->suppressed |= bit;
+    }
+
+    /* Новым реальным клавишам назначаем порядок нажатия. */
+    const uint32_t added = real & ~data->confirmed;
+    for (uint32_t i = 0; i < cells; i++) {
+        if (added & BIT(i)) {
+            data->press_seq[i] = data->press_counter++;
+        }
+    }
+
+    data->confirmed = real;
+    data->observed = raw;
+
+    return real;
+}
+
+#endif /* CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_GHOST_FILTER */
 
 /* -------------------------------------------------------------------------
  * Pin setup
@@ -342,6 +589,9 @@ static int kscan_hiz_read(const struct device *dev) {
         }
     }
 
+    /* Raw observation of the matrix: which cells read as pressed. */
+    uint32_t raw = 0;
+
     for (size_t i = 0; i < cfg->outputs.len; i++) {
         /* Only this output drives the matrix, the rest are floating. */
         int err = hiz_output_activate(&cfg->outputs.gpios[i]);
@@ -364,10 +614,10 @@ static int kscan_hiz_read(const struct device *dev) {
             /* row-gpios are the outputs, col-gpios are the inputs. */
             const size_t r = i;
             const size_t c = j;
-            const size_t index = (c * cfg->rows) + r;
 
-            zmk_debounce_update(&data->matrix_state[index], active, cfg->debounce_scan_period_ms,
-                                &cfg->debounce_config);
+            if (active) {
+                raw |= BIT((c * cfg->rows) + r);
+            }
         }
 
         /* Release it again before strobing the next one. */
@@ -378,6 +628,11 @@ static int kscan_hiz_read(const struct device *dev) {
         }
     }
 
+#if IS_ENABLED(CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_GHOST_FILTER)
+    /* Drop the keys that are only ghosts of a diodeless matrix. */
+    raw = hiz_filter_ghosts(dev, raw);
+#endif
+
     /* Report the changes. */
     bool continue_scan = false;
 
@@ -385,6 +640,10 @@ static int kscan_hiz_read(const struct device *dev) {
         for (size_t c = 0; c < cfg->cols; c++) {
             const size_t index = (c * cfg->rows) + r;
             struct zmk_debounce_state *state = &data->matrix_state[index];
+
+            const bool active = (raw & BIT(index)) != 0;
+
+            zmk_debounce_update(state, active, cfg->debounce_scan_period_ms, &cfg->debounce_config);
 
             if (zmk_debounce_get_changed(state)) {
                 const bool pressed = zmk_debounce_is_pressed(state);
@@ -514,6 +773,7 @@ static int kscan_hiz_pm_action(const struct device *dev, enum pm_device_action a
 #define KSCAN_HIZ_INIT(n)                                                                          \
     BUILD_ASSERT(INST_ROWS_LEN(n) > 0, "row-gpios must not be empty");                             \
     BUILD_ASSERT(INST_COLS_LEN(n) > 0, "col-gpios must not be empty");                             \
+    BUILD_ASSERT(INST_MATRIX_LEN(n) <= HIZ_MAX_CELLS, "matrix is too big for the ghost filter");   \
     BUILD_ASSERT(INST_DEBOUNCE_PRESS_MS(n) <= DEBOUNCE_COUNTER_MAX,                                \
                  "debounce-press-ms is too large");                                               \
     BUILD_ASSERT(INST_DEBOUNCE_RELEASE_MS(n) <= DEBOUNCE_COUNTER_MAX,                              \

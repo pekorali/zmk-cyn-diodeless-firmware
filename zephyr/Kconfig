@@ -14,3 +14,22 @@ config ZMK_KSCAN_GPIO_MATRIX_HIZ
 	  are put into a high-impedance state instead of being driven to the
 	  inactive level, which removes the key ghosting of diodeless matrices
 	  and gives full NKRO.
+
+config ZMK_KSCAN_GPIO_MATRIX_HIZ_GHOST_FILTER
+	bool "Filter out ghost keys of a diodeless matrix"
+	default y
+	depends on ZMK_KSCAN_GPIO_MATRIX_HIZ
+	help
+	  In a matrix without diodes three keys forming an "L" shape create a
+	  conducting path that makes a fourth key read as pressed even though
+	  it is not. Such a "ghost" cannot be detected reliably: the sets
+	  {W,S,D} and {W,S,D,E} produce exactly the same voltages on all
+	  pins, so no digital scan can tell them apart.
+
+	  With this option the driver picks the most plausible interpretation
+	  instead of reporting every cell that reads as pressed: a cell that
+	  only appeared because a chain of three pressed keys just got
+	  completed is dropped, and keys that were already reported as
+	  pressed are never dropped.
+
+	  Turn this off to see the raw matrix (ghosts included).
