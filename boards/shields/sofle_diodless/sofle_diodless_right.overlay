@@ -53,12 +53,12 @@
  */
 &kscan_matrix {
     col-gpios
-        = <&gpio1 15 GPIO_ACTIVE_LOW>   /* COL0  P1.15 (F7)  6     Y    H    N   */
-        , <&gpio0  2 GPIO_ACTIVE_LOW>   /* COL1  P0.02 (F6)  7     U    J    M   */
-        , <&gpio0 29 GPIO_ACTIVE_LOW>   /* COL2  P0.29 (F5)  8     I    K    ,   */
-        , <&gpio0 31 GPIO_ACTIVE_LOW>   /* COL3  P0.31 (F4)  9     O    L    .   */
-        , <&gpio1  6 GPIO_ACTIVE_LOW>   /* COL4  P1.06 (B5)  0     P    ;    /   */
-        , <&gpio1  4 GPIO_ACTIVE_LOW>   /* COL5  P1.04 (B4)  BSPC  '    SHIFT     */
+        = <&gpio1 15 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* COL0  P1.15 (F7)  6     Y    H    N   */
+        , <&gpio0  2 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* COL1  P0.02 (F6)  7     U    J    M   */
+        , <&gpio0 29 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* COL2  P0.29 (F5)  8     I    K    ,   */
+        , <&gpio0 31 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* COL3  P0.31 (F4)  9     O    L    .   */
+        , <&gpio1  6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* COL4  P1.06 (B5)  0     P    ;    /   */
+        , <&gpio1  4 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>   /* COL5  P1.04 (B4)  BSPC  '    SHIFT     */
         ;
 };
 
