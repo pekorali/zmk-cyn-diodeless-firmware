@@ -33,3 +33,20 @@ config ZMK_KSCAN_GPIO_MATRIX_HIZ_GHOST_FILTER
 	  pressed are never dropped.
 
 	  Turn this off to see the raw matrix (ghosts included).
+
+config ZMK_KSCAN_GPIO_MATRIX_HIZ_STUCK_KEY_TIMEOUT_MS
+	int "Force-release a key held continuously for this long (ms), 0 to disable"
+	default 300000
+	depends on ZMK_KSCAN_GPIO_MATRIX_HIZ
+	range 0 2147483647
+	help
+	  A switch that gets mechanically stuck closed keeps its HID key
+	  reported forever: it fills the USB/BLE report, repeats characters
+	  and, in a diodeless matrix, also acts as a permanent conduction
+	  path that makes the ghost filter suppress keys around it.
+
+	  With this option the driver reports the key released after it has
+	  been continuously held for this many milliseconds and ignores the
+	  switch until its contacts actually open again. Set to 0 to disable
+	  the protection (for example if a bound action requires holding a
+	  key longer than the timeout).
