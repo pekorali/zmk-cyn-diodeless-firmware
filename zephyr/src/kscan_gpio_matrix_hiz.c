@@ -83,6 +83,19 @@
  *  Что остаётся неразрешимым: если пользователь нажал 3 клавиши
  *  «уголком» одновременно (за один скан), фильтр выбирает одну из двух
  *  равноправных трактовок. Единственное настоящее решение — диоды.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ *  ЗАЩИТА ОТ ЗАЛИПАНИЯ (stuck key)
+ * ─────────────────────────────────────────────────────────────────────────
+ *  Механически залипший свитч вечно держит свой HID-ключ в отчёте: забивает
+ *  USB/BLE-репорт и повторяет символы.
+ *
+ *  Клавиша, непрерывно зажатая дольше
+ *  CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_STUCK_KEY_TIMEOUT_MS, принудительно
+ *  отпускается и ставится в «карантин»: её события подавляются до
+ *  фактического размыкания контактов. 0 = отключено. Проверка выполняется
+ *  на каждом скане и не влияет на обычные одновременные нажатия: порог
+ *  срабатывания — минуты непрерывного удержания одной клавиши.
  */
 
 #define DT_DRV_COMPAT zmk_kscan_gpio_matrix_hiz
@@ -212,6 +225,11 @@ struct kscan_hiz_data {
     uint32_t observed;   /* предыдущее "сырое" наблюдение матрицы */
     uint32_t press_seq[HIZ_MAX_CELLS]; /* порядок нажатия (для реальных) */
     uint32_t press_counter;
+#endif
+#if CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_STUCK_KEY_TIMEOUT_MS > 0
+    /* Защита от залипания (см. описание в начале файла). */
+    int64_t held_since[HIZ_MAX_CELLS]; /* момент подтверждённого нажатия */
+    uint32_t stuck; /* ячейки, принудительно отпущенные из-за залипания */
 #endif
 };
 
@@ -636,6 +654,8 @@ static int kscan_hiz_read(const struct device *dev) {
     /* Report the changes. */
     bool continue_scan = false;
 
+    const int64_t now = k_uptime_get();
+
     for (size_t r = 0; r < cfg->rows; r++) {
         for (size_t c = 0; c < cfg->cols; c++) {
             const size_t index = (c * cfg->rows) + r;
@@ -645,16 +665,61 @@ static int kscan_hiz_read(const struct device *dev) {
 
             zmk_debounce_update(state, active, cfg->debounce_scan_period_ms, &cfg->debounce_config);
 
-            if (zmk_debounce_get_changed(state)) {
-                const bool pressed = zmk_debounce_is_pressed(state);
+            const bool changed = zmk_debounce_get_changed(state);
+            bool report = changed;
+            bool pressed = changed ? zmk_debounce_is_pressed(state) : false;
+            bool stuck = false;
 
+#if CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_STUCK_KEY_TIMEOUT_MS > 0
+            if (changed && pressed) {
+                data->held_since[index] = now;
+            }
+
+            if ((data->stuck & BIT(index)) != 0) {
+                if (zmk_debounce_is_active(state)) {
+                    /* Залипшая клавиша всё ещё физически зажата: события
+                     * подавляются, чтобы не спамить повторными нажатиями. */
+                    stuck = true;
+                    report = false;
+                } else {
+                    /* Физическое отпускание подтверждено — снимаем карантин.
+                     * Событие отпускания подавляем: оно уже было отправлено
+                     * принудительно в момент постановки в карантин. */
+                    LOG_DBG("Stuck key at %zu,%zu released", r, c);
+                    data->stuck &= ~BIT(index);
+                    report = false;
+                }
+            } else if (zmk_debounce_is_pressed(state) && zmk_debounce_is_active(state) &&
+                       now - data->held_since[index] >=
+                           CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_STUCK_KEY_TIMEOUT_MS) {
+                /* Клавиша непрерывно зажата дольше лимита (проверяется на
+                 * каждом скане, а не только в момент нажатия). Отправляем
+                 * отпускание и ставим клавишу в карантин до фактического
+                 * размыкания контактов. */
+                LOG_WRN("Stuck key at %zu,%zu: held for %lld ms, force-releasing", r, c,
+                        (long long)(now - data->held_since[index]));
+
+                report = true;
+                pressed = false;
+                data->stuck |= BIT(index);
+                stuck = true;
+            }
+#endif
+
+            if (report) {
                 LOG_DBG("Sending event at %zu,%zu state %s", r, c, pressed ? "on" : "off");
                 if (data->callback) {
                     data->callback(dev, r, c, pressed);
                 }
             }
 
+#if CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_STUCK_KEY_TIMEOUT_MS > 0
+            if (!stuck) {
+                continue_scan = continue_scan || zmk_debounce_is_active(state);
+            }
+#else
             continue_scan = continue_scan || zmk_debounce_is_active(state);
+#endif
         }
     }
 
