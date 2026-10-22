@@ -83,23 +83,6 @@
  *  Что остаётся неразрешимым: если пользователь нажал 3 клавиши
  *  «уголком» одновременно (за один скан), фильтр выбирает одну из двух
  *  равноправных трактовок. Единственное настоящее решение — диоды.
- *
- * ─────────────────────────────────────────────────────────────────────────
- *  ЗАЩИТА ОТ ЗАЛИПАНИЯ (stuck key)
- * ─────────────────────────────────────────────────────────────────────────
- *  Механически залипший свитч вечно держит свой HID-ключ в отчёте: забивает
- *  USB/BLE-репорт, повторяет символы и, в матрице без диодов, работает как
- *  постоянный проводник, мешающий фильтру призраков вокруг себя.
- *
- *  Клавиша, непрерывно зажатая дольше
- *  CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_STUCK_KEY_TIMEOUT_MS, принудительно
- *  отпускается и ставится в «карантин»: её события подавляются до
- *  фактического размыкания контактов. 0 = отключено.
- *
- *  ЗАЛИПШАЯ КЛАВИША И ЭНЕРГОСБЕРЕЖЕНИЕ: пока контакты залипшего свитча
- *  замкнуты, его столбец на покое (все выходы в LOW) постоянно тянет вход
- *  в LOW — возможны ложные пробуждения. Это свойство железа, защита от
- *  залипания решает только проблему HID-отчёта.
  */
 
 #define DT_DRV_COMPAT zmk_kscan_gpio_matrix_hiz
@@ -230,11 +213,6 @@ struct kscan_hiz_data {
     uint32_t press_seq[HIZ_MAX_CELLS]; /* порядок нажатия (для реальных) */
     uint32_t press_counter;
 #endif
-#if CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_STUCK_KEY_TIMEOUT_MS > 0
-    /* Защита от залипания (см. описание в начале файла). */
-    int64_t held_since[HIZ_MAX_CELLS]; /* момент подтверждённого нажатия */
-    uint32_t stuck; /* ячейки, принудительно отпущенные из-за залипания */
-#endif
 };
 
 /* -------------------------------------------------------------------------
@@ -323,17 +301,13 @@ static uint32_t hiz_matrix_closure(uint32_t mask, uint32_t rows, uint32_t cols) 
  *
  * Условия:
  *   • все три клавиши есть в `real_mask` (это реальные клавиши);
- *   • если `require_fresh` — в цепочке есть клавиша, которая появилась
- *     только что (`fresh_mask`): призрак возникает ровно в момент, когда
- *     замыкается цепочка, поэтому только что появившуюся ячейку можно
- *     объяснять только «только что» замкнувшейся цепочкой. Для ПЕРЕОЦЕНКИ
- *     давно подавленных ячеек (см. hiz_revive_ghosts) это условие не нужно;
- *   • если `require_order` — уже подтверждённые клавиши в цепочке нажаты
- *     в том же порядке (эвристика для неоднозначных трактовок).
+ *   • в цепочке есть клавиша, которая появилась только что (`fresh_mask`) —
+ *     иначе цепочка была бы замкнута давно и призрак появился бы раньше;
+ *   • уже подтверждённые клавиши в цепочке нажаты в том же порядке.
  */
 static bool hiz_ghost_explainable(uint32_t cell, uint32_t real_mask, uint32_t confirmed,
                                   const uint32_t *press_seq, uint32_t fresh_mask, uint32_t rows,
-                                  uint32_t cols, bool require_fresh, bool require_order) {
+                                  uint32_t cols) {
     const uint32_t r = cell % rows;
     const uint32_t c = cell / rows;
 
@@ -361,8 +335,8 @@ static bool hiz_ghost_explainable(uint32_t cell, uint32_t real_mask, uint32_t co
 
             const uint32_t chain = BIT(k1) | BIT(k2) | BIT(k3);
 
-            /* Цепочка должна замкнуться именно сейчас (только для новых ячеек). */
-            if (require_fresh && (chain & fresh_mask) == 0) {
+            /* Цепочка должна замкнуться именно сейчас. */
+            if ((chain & fresh_mask) == 0) {
                 continue;
             }
 
@@ -385,7 +359,7 @@ static bool hiz_ghost_explainable(uint32_t cell, uint32_t real_mask, uint32_t co
                 last = (int32_t)press_seq[keys[i]];
             }
 
-            if (have_confirmed && (ordered || !require_order)) {
+            if (have_confirmed && ordered) {
                 return true;
             }
         }
@@ -411,32 +385,6 @@ static uint32_t hiz_filter_ghosts(const struct device *dev, uint32_t raw) {
     data->confirmed &= raw;
     data->suppressed &= raw;
 
-    /* ВОСКРЕШЕНИЕ: подавленная ячейка всё ещё зажата, но цепочки из трёх
-     * реальных клавиш, объясняющей её как призрак, больше нет (цепочка
-     * разорвалась отпусканием одной из клавиш) — значит, это настоящее
-     * нажатие. Классический случай: зажаты W+S+D (E подавлен как призрак),
-     * затем D отпущена, а E продолжает держаться — E должна заработать,
-     * не дожидаясь полного отпускания и повторного нажатия.
-     *
-     * Переоценка без условия `fresh` и без эвристики порядка: если цепочки
-     * нет вообще — трактовка «призрак» недоступна, ячейка настоящая. */
-    for (uint32_t i = 0; i < cells; i++) {
-        const uint32_t bit = BIT(i);
-
-        if ((data->suppressed & bit) == 0) {
-            continue;
-        }
-
-        if (hiz_ghost_explainable(i, data->confirmed, data->confirmed, data->press_seq, 0, rows,
-                                  cols, false, false)) {
-            continue; /* цепочка всё ещё существует — остаёмся при призраке */
-        }
-
-        LOG_DBG("Ghost at row %u col %u revived (chain broken)", i % rows, i / rows);
-
-        data->suppressed &= ~bit;
-    }
-
     /* Клавиши, которые появились только что. */
     const uint32_t fresh = raw & ~data->observed;
 
@@ -459,7 +407,7 @@ static uint32_t hiz_filter_ghosts(const struct device *dev, uint32_t raw) {
         }
 
         if (!hiz_ghost_explainable(i, real & ~bit, data->confirmed, data->press_seq, fresh, rows,
-                                   cols, true, true)) {
+                                   cols)) {
             continue;
         }
 
@@ -688,8 +636,6 @@ static int kscan_hiz_read(const struct device *dev) {
     /* Report the changes. */
     bool continue_scan = false;
 
-    const int64_t now = k_uptime_get();
-
     for (size_t r = 0; r < cfg->rows; r++) {
         for (size_t c = 0; c < cfg->cols; c++) {
             const size_t index = (c * cfg->rows) + r;
@@ -699,61 +645,16 @@ static int kscan_hiz_read(const struct device *dev) {
 
             zmk_debounce_update(state, active, cfg->debounce_scan_period_ms, &cfg->debounce_config);
 
-            const bool changed = zmk_debounce_get_changed(state);
-            bool report = changed;
-            bool pressed = changed ? zmk_debounce_is_pressed(state) : false;
-            bool stuck = false;
+            if (zmk_debounce_get_changed(state)) {
+                const bool pressed = zmk_debounce_is_pressed(state);
 
-#if CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_STUCK_KEY_TIMEOUT_MS > 0
-            if (changed && pressed) {
-                data->held_since[index] = now;
-            }
-
-            if ((data->stuck & BIT(index)) != 0) {
-                if (zmk_debounce_is_active(state)) {
-                    /* Залипшая клавиша всё ещё физически зажата: события
-                     * подавляются, чтобы не спамить повторными нажатиями. */
-                    stuck = true;
-                    report = false;
-                } else {
-                    /* Физическое отпускание подтверждено — снимаем карантин.
-                     * Событие отпускания подавляем: оно уже было отправлено
-                     * принудительно в момент постановки в карантин. */
-                    LOG_DBG("Stuck key at %zu,%zu released", r, c);
-                    data->stuck &= ~BIT(index);
-                    report = false;
-                }
-            } else if (zmk_debounce_is_pressed(state) && zmk_debounce_is_active(state) &&
-                       now - data->held_since[index] >=
-                           CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_STUCK_KEY_TIMEOUT_MS) {
-                /* Клавиша непрерывно зажата дольше лимита (проверяется на
-                 * каждом скане, а не только в момент нажатия). Отправляем
-                 * отпускание и ставим клавишу в карантин до физического
-                 * отпускания — иначе залипший свитч завалит HID-отчёт. */
-                LOG_WRN("Stuck key at %zu,%zu: held for %lld ms, force-releasing", r, c,
-                        (long long)(now - data->held_since[index]));
-
-                report = true;
-                pressed = false;
-                data->stuck |= BIT(index);
-                stuck = true;
-            }
-#endif
-
-            if (report) {
                 LOG_DBG("Sending event at %zu,%zu state %s", r, c, pressed ? "on" : "off");
                 if (data->callback) {
                     data->callback(dev, r, c, pressed);
                 }
             }
 
-#if CONFIG_ZMK_KSCAN_GPIO_MATRIX_HIZ_STUCK_KEY_TIMEOUT_MS > 0
-            if (!stuck) {
-                continue_scan = continue_scan || zmk_debounce_is_active(state);
-            }
-#else
             continue_scan = continue_scan || zmk_debounce_is_active(state);
-#endif
         }
     }
 
